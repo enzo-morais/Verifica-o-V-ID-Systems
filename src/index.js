@@ -8,6 +8,9 @@ const { startBot } = require('./bot/bot');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust proxy (Railway, Render, etc.)
+app.set('trust proxy', 1);
+
 // Static frontend FIRST (no rate limit)
 app.use(express.static(path.join(__dirname, '../public'), {
   setHeaders: (res, filePath) => {
