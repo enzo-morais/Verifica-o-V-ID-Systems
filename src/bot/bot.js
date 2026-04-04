@@ -52,7 +52,8 @@ function buildVerifyComponents() {
         new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setStyle(ButtonStyle.Link)
-            .setLabel("<:void:1461814125087953168> Verifique-se")
+            .setLabel("Verifique-se")
+            .setEmoji("<:void:1461814125087953168>")
             .setURL(`${siteURL}/auth/discord`),
         ),
       ),
