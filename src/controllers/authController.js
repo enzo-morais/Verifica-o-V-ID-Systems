@@ -49,7 +49,10 @@ async function callback(req, res) {
     }
 
     // Send log
-    sendVerifyLog(userData, stateData.ip, stateData.userAgent).catch(console.error);
+    console.log('Enviando log de verificação para', userData.username);
+    sendVerifyLog(userData, stateData.ip, stateData.userAgent).catch(err => {
+      console.error('Erro ao enviar log de verificação:', err);
+    });
 
     res.redirect(`/?status=success&user=${encodeURIComponent(userData.username)}`);
   } catch (err) {

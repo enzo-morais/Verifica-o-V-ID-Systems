@@ -1,10 +1,9 @@
 const { EmbedBuilder } = require('discord.js');
 const fetch = require('node-fetch');
 
-let clientRef = null;
-
-function setClient(client) {
-  clientRef = client;
+// Get client from bot module lazily to avoid circular deps
+function getClient() {
+  return require('../bot/bot').client;
 }
 
 function parseUserAgent(ua) {
@@ -19,16 +18,15 @@ function parseUserAgent(ua) {
 
 async function getGeoFromIP(ip) {
   try {
-    const res = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,regionName,city,countryCode&lang=pt-BR`);
+    const cleanIP = ip.replace('::ffff:', '');
+    const res = await fetch(`http://ip-api.com/json/${cleanIP}?fields=status,country,regionName,city,countryCode&lang=pt-BR`);
     const data = await res.json();
     if (data.status === 'success') {
-      return {
-        city: data.city || '?',
-        region: data.regionName || '?',
-        country: data.countryCode || '?',
-      };
+      return { city: data.city || '?', region: data.regionName || '?', country: data.countryCode || '?' };
     }
-  } catch {}
+  } catch (err) {
+    console.error('Geo lookup error:', err.message);
+  }
   return { city: '?', region: '?', country: '?' };
 }
 
@@ -39,78 +37,63 @@ function getCountryFlag(code) {
 }
 
 async function sendVerifyLog(userData, ip, userAgent) {
-  if (!clientRef) return;
+  const client = getClient();
+  if (!client || !client.isReady()) {
+    console.error('Log: Bot not ready yet');
+    return;
+  }
+
   const channelId = process.env.LOG_CHANNEL_ID;
-  if (!channelId) return;
+  if (!channelId) {
+    console.error('Log: LOG_CHANNEL_ID not set');
+    return;
+  }
 
   try {
-    const channel = await clientRef.channels.fetch(channelId);
-    if (!channel || !channel.isTextBased()) return;
+    const channel = await client.channels.fetch(channelId);
+    if (!channel || !channel.isTextBased()) {
+      console.error('Log: Channel not found or not text-based');
+      return;
+    }
 
-    const geo = await getGeoFromIP(ip);
+    const cleanIP = (ip || '?.?.?.?').replace('::ffff:', '');
+    const geo = await getGeoFromIP(cleanIP);
     const flag = getCountryFlag(geo.country);
-    const browser = parseUserAgent(userAgent);
+    const browser = parseUserAgent(userAgent || '');
     const now = new Date();
     const time = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 
-    // Days on Discord (from user ID snowflake)
+    // Days on Discord
     const discordEpoch = 1420070400000;
     const timestamp = Number(BigInt(userData.id) >> 22n) + discordEpoch;
     const daysOnDiscord = Math.floor((Date.now() - timestamp) / 86400000);
 
-    const guild = clientRef.guilds.cache.get(process.env.GUILD_ID);
+    const guild = client.guilds.cache.get(process.env.GUILD_ID);
     const guildName = guild ? guild.name : 'Desconhecido';
     const guildId = process.env.GUILD_ID;
-    const botUser = clientRef.user;
+    const botUser = client.user;
 
     const embed = new EmbedBuilder()
       .setColor(0x2b2d31)
-      .setAuthor({ name: 'Usuário Verificado', iconURL: 'https://cdn.discordapp.com/emojis/1100000000000000000.png' })
+      .setAuthor({ name: 'Usuário Verificado', iconURL: botUser.displayAvatarURL() })
       .setDescription('Detalhes da verificação do usuário abaixo.')
       .addFields(
-        {
-          name: 'Usuário',
-          value: `<@${userData.id}>\n(\`${userData.username}\`)`,
-          inline: true,
-        },
-        {
-          name: 'Dias no Discord',
-          value: `\`${daysOnDiscord}\``,
-          inline: true,
-        },
-        {
-          name: 'Endereço IP',
-          value: `1. \`${ip}\``,
-          inline: false,
-        },
-        {
-          name: 'Localização',
-          value: `1. ${flag} ${geo.city} — ${geo.region} — ${geo.country}`,
-          inline: false,
-        },
-        {
-          name: 'Dispositivo',
-          value: `\`${browser}\``,
-          inline: true,
-        },
-        {
-          name: 'Autenticador',
-          value: `<@${botUser.id}>\n(\`${botUser.id}\`)`,
-          inline: true,
-        },
-        {
-          name: 'Servidor',
-          value: `\`${guildName} (${guildId})\``,
-          inline: false,
-        },
+        { name: 'Usuário', value: `<@${userData.id}>\n(\`${userData.username}\`)`, inline: true },
+        { name: 'Dias no Discord', value: `\`${daysOnDiscord}\``, inline: true },
+        { name: 'Endereço IP', value: `1. \`${cleanIP}\``, inline: false },
+        { name: 'Localização', value: `1. ${flag} ${geo.city} — ${geo.region} — ${geo.country}`, inline: false },
+        { name: 'Dispositivo', value: `\`${browser}\``, inline: true },
+        { name: 'Autenticador', value: `<@${botUser.id}>\n(\`${botUser.id}\`)`, inline: true },
+        { name: 'Servidor', value: `\`${guildName} (${guildId})\``, inline: false },
       )
       .setFooter({ text: `Verificação automatizada • Hoje às ${time}` })
       .setTimestamp();
 
     await channel.send({ embeds: [embed] });
+    console.log(`Log de verificação enviado para ${userData.username}`);
   } catch (err) {
     console.error('Erro ao enviar log:', err.message);
   }
 }
 
-module.exports = { setClient, sendVerifyLog };
+module.exports = { sendVerifyLog };
